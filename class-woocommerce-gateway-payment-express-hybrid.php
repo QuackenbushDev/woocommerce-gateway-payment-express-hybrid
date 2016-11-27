@@ -252,7 +252,7 @@ class WC_Gateway_Payment_Express_Hybrid extends WC_Payment_Gateway {
 		if ( strlen( $MerchantRef ) > 64 ) {
 			$MerchantRef = substr( $this->site_name , 0 , max( 50 - strlen( $order_number ) , 0 ) ) . '... - Order # ' . $order_number ;
 			if ( strlen( $MerchantRef ) > 64 ) {
-				$MerchantRef = 'Order # ' . substr( $order_numberd , 0 , 53 ) . '...' ;
+				$MerchantRef = 'Order # ' . substr( $order_number , 0 , 53 ) . '...' ;
 			}
 		}
 		$txndata1 =  apply_filters( 'filter_custom_order_number', "Order number : ". $order_number );
@@ -269,8 +269,14 @@ class WC_Gateway_Payment_Express_Hybrid extends WC_Payment_Gateway {
 		$billingID = "00" . time() ."-". $current_user->ID;
 
 		$paymentReq = new DpsPxPayPayment( $this->access_userid, $this->access_key, $this->access_url );
-		$paymentReq->txnType			= 'Purchase';
-		$paymentReq->amount				= $order->order_total;
+
+		if (WC_Subscriptions_Cart::cart_contains_subscription() && $order->order_total == 0.01) {
+			$paymentReq->txnType = 'Auth';
+		} else {
+			$paymentReq->txnType = 'Purchase';
+		}
+
+		$paymentReq->amount	 = $order->order_total;
 		$paymentReq->currency			= $currency;
 		$paymentReq->transactionNumber	= $TxnId;
 		$paymentReq->invoiceReference	= $MerchantRef;
@@ -285,11 +291,11 @@ class WC_Gateway_Payment_Express_Hybrid extends WC_Payment_Gateway {
 		$paymentReq->enableRecurring	= "1";
 		
 		// allow plugins/themes to modify invoice description and reference, and set option fields
-		$paymentReq->invoiceDescription	= apply_filters('dpspxpay_invoice_desc', $paymentReq->invoiceDescription, $form);
-		$paymentReq->invoiceReference	= apply_filters('dpspxpay_invoice_ref', $paymentReq->invoiceReference, $form);
-		$paymentReq->option1			= apply_filters('dpspxpay_invoice_txndata1', $paymentReq->option1, $form);
-		$paymentReq->option2			= apply_filters('dpspxpay_invoice_txndata2', $paymentReq->option2, $form);
-		$paymentReq->option3			= apply_filters('dpspxpay_invoice_txndata3', $paymentReq->option3, $form);
+		$paymentReq->invoiceDescription	= apply_filters('dpspxpay_invoice_desc', $paymentReq->invoiceDescription, $order_id);
+		$paymentReq->invoiceReference	= apply_filters('dpspxpay_invoice_ref', $paymentReq->invoiceReference, $order_id);
+		$paymentReq->option1			= apply_filters('dpspxpay_invoice_txndata1', $paymentReq->option1, $order_id);
+		$paymentReq->option2			= apply_filters('dpspxpay_invoice_txndata2', $paymentReq->option2, $order_id);
+		$paymentReq->option3			= apply_filters('dpspxpay_invoice_txndata3', $paymentReq->option3, $order_id);
 		
 		$this->log->add( 'pxpay', '========= initiating transaction request' );
 		$this->log->add( 'pxpay', sprintf( '%s account, invoice ref: %s, transaction: %s, amount: %s, billingID: %s', 
@@ -372,14 +378,19 @@ $this->log->add( 'pxpay', print_r( array( 'dps url' => esc_url( $dps_adr ), 'aja
 		$ress = '';	/* all billingID for which transaction failed */
 		global $woocommerce;
 		global $wpdb;
+
+		$gateways = WC()->payment_gateways()->get_available_payment_gateways();
+		$gateway = $gateways['payment_express_hybrid'];
+
 		$amount = number_format( $amount, 2, '.', '' );
-		$marchenUserName = $this->pp_user; 
-		$marchentPassword = $this->pp_password; 
+		$marchenUserName = $gateway->settings['pxPost_username'];
+		$marchentPassword = $gateway->settings['pxPost_password'];
 		$userSuppliers = get_user_meta( $order->user_id, '_supDpsBillingID', true ); 	/* This is actually a BillingId */
 		$merchRef = 'Scheduled auto payment for order '.$order->id;
 
 		$currency = get_woocommerce_currency(); 
 
+		$order_id = $order->id;
 		$currency = apply_filters( 'filter_pxpost_reccurring_currency', $currency, $order_id, $this->settings );
 		
 		$name = '';
@@ -393,6 +404,7 @@ $this->log->add( 'pxpost', print_r( array( 'userID and BillingId' => array( 'use
 		$cmdDoTxnTransaction .= "<CardHolderName>$name</CardHolderName>";
 		$cmdDoTxnTransaction .= "<TxnType>Purchase</TxnType>";
 		$cmdDoTxnTransaction .= "<MerchantReference>$merchRef</MerchantReference>";
+		//$cmdDoTxnTransaction .= "<TestMode>1</TestMode>";
 		$cmdDoTxnTransaction .= "</Txn>";
 	
 $this->log->add( 'pxpost', print_r( array( 'XML request' => $cmdDoTxnTransaction ), true ) );
@@ -423,12 +435,12 @@ $this->log->add( 'pxpost', print_r( array( 'XML request' => $cmdDoTxnTransaction
 $this->log->add( 'pxpost', print_r( array( 'pxpost server url' => $this->URL ), true ) );
 $this->log->add( 'pxpost', print_r( array( 'txn request' => $cmdDoTxnTransaction ), true ) );
 $this->log->add( 'pxpost', print_r( array( 'Subscription renewal results' => var_export( $result, true ) ), true ) );
-		$transResult = $GLOBALS['woocommerce_paymentexpress_init']::wc_pxpost_pxpost_parse_xml( $result );
+		$transResult = $GLOBALS['woocommerce_paymentexpress_init']->wc_pxpost_pxpost_parse_xml( $result );
 		$dpsBillingID = explode( '|', $transResult );
 		$dpsCardHolderResponseText = $dpsBillingID[1];
 		$dpsTxnRef = $dpsBillingID[4];
 		$dpsBillingID = $dpsBillingID[5];
-		//if payment completed with success self::wc_pxpost_log( array( 'pxpost dps CardHolder Response Text' => $dpsCardHolderResponseText ) );
+		//if payment completed with successself::wc_pxpost_log( array( 'pxpost dps CardHolder Response Text' => $dpsCardHolderResponseText ) );
 		if ( preg_match("/APPROVED/i", $dpsCardHolderResponseText ) ) {
 			$order->payment_complete();
 			add_post_meta( $order->id, 'dpsTxnRef', $dpsTxnRef, true );
@@ -446,12 +458,11 @@ $this->log->add( 'pxpost', print_r( array( 'Subscription renewal results' => var
 		global $woocommerce;
 		$available_gateways = $woocommerce->payment_gateways->get_available_payment_gateways();
 		$payment_method = $available_gateways[ 'payment_express_hybrid' ];
-$this->log->add( 'pxpost', print_r( array( 'payment_method' => $payment_method ), true ) );		
-		
 		$URL = $payment_method->settings[ 'pxPost_url' ];
-		$marchenUserName = $payment_method->settings[ 'pxPost_username' ];
-		$marchentPassword = $payment_method->settings[ 'pxPost_password' ];
-
+		$marchenUserName = $payment_method->settings['pxPost_username'];
+		$marchentPassword = $payment_method->settings['pxPost_password'];
+$this->log->add( 'pxpost', print_r( array( 'pxpost user' => $marchenUserName ), true ) );
+$this->log->add( 'pxpost', print_r( array( 'pxpost password' => $marchentPassword ), true ) );
 		$merchRef = 'Refund Order#'. $order_id;	
 		$dpsTxnRef = get_post_meta( $order_id, 'dpsTxnRef', true );
 		$amount = number_format( $amount, 2, '.', '' );
@@ -488,7 +499,7 @@ $this->log->add( 'pxpost', print_r( array( 'pxpost request results' => $errorRes
 			$result = $result['body'];
 		}
 $this->log->add( 'pxpost', print_r( array( 'wp_remote_post result in refund' => $result ), true ) );
-		$transResult = $GLOBALS['woocommerce_paymentexpress_init']::wc_pxpost_pxpost_parse_xml( $result );
+		$transResult = $GLOBALS['woocommerce_paymentexpress_init']->wc_pxpost_pxpost_parse_xml( $result );
 		$dpsBillingID = explode( '|', $transResult );
 		$dpsCardHolderResponseText = $dpsBillingID[1];
 		if ( $dpsCardHolderResponseText == "APPROVED" ) {

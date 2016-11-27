@@ -3,7 +3,7 @@
  * Plugin Name: WooCommerce Payment Express
  * Plugin URI: http://woothemes.com/products/woocommerce-gateway-payment-express-hybrid/
  * Description: Allows your customers to pay via Payment Express PxPay (Supports PxPay1 & 2). The extension also uses PxPost for recurring billing support with the WooCommerce Subscriptions extension.
- * Version: 1.1
+ * Version: 1.0
  * Author: OPMC
  * Author URI: http://opmc.com.au/
  * Developer: OPMC
@@ -94,7 +94,7 @@ if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', g
 				global $current_user;
 				global $woocommerce;
 				global $wpdb;
-				wp_get_current_user();
+				get_currentuserinfo();
 				$userName = $current_user->user_login;
 				$order_id = $_POST['orderNo'];
 				$order                = wc_get_order( $order_id );
@@ -108,12 +108,13 @@ if ( in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', g
 				$amount = $order->order_total;
 				$supplier_items_details = array();
 				$available_gateways = $woocommerce->payment_gateways->get_available_payment_gateways();
-				$payment_method = $available_gateways[ 'Payment_Express' ];
+				$payment_method = $available_gateways[ 'payment_express_hybrid' ];
 				$URL = $payment_method->settings[ 'pxPay_url' ];
 				$supplier_items_details[0]['total_amount'] =  $amount;
-				$supplier_items_details[0]['pxuser'] = $payment_method->pp_user;
-				$supplier_items_details[0]['pxpass'] = $payment_method->pp_password;
-				$supplier_items_details = apply_filters( 'supplier_items_details_filter', $supplier_items_details, $order_id);
+				$supplier_items_details[0]['pxuser'] = $payment_method->settings['pxPost_username'];
+				$supplier_items_details[0]['pxpass'] = $payment_method->settings['pxPost_password'];
+
+                $supplier_items_details = apply_filters( 'supplier_items_details_filter', $supplier_items_details, $order_id);
 				/**
 				 *  In general, $supplier_items_details will contain details for only one supplier, unless this array is changed using 
 				 *  the filter 'supplier_items_details' applied above.
@@ -227,11 +228,9 @@ self::wc_pxhybrid_log( array( 'pxpost result returned by wc_pxpost_pxpost_parse_
 				global $woocommerce, $wpdb;
 				$available_gateways = $woocommerce->payment_gateways->get_available_payment_gateways();
 				$payment_method = $available_gateways[ 'payment_express_hybrid' ];
-
 				$URL = $payment_method->settings[ 'pxPost_url' ];
-				$marchenUserName = $payment_method->settings[ 'pxPost_username' ];
-				$marchentPassword = $payment_method->settings[ 'pxPost_password' ];
-		
+                $marchenUserName = $payment_method->settings['pxPost_username'];
+                $marchentPassword = $payment_method->settings['pxPost_password'];
 				$order_id = $_GET['order_id'];
 				$merchRef = 'Refund Order#'. $order_id;	
 				$dpsTxnRef = get_post_meta( $order_id, 'dpsTxnRef', true );
